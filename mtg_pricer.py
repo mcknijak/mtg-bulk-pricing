@@ -163,9 +163,9 @@ class CardPricer:
         parts = [p.strip() for p in line.split('|')]
         
         card_name = parts[0]
-        set_code = parts[1] if len(parts) > 1 else None
+        set_code = parts[1].upper() if len(parts) > 1 and parts[1] else None  # Convert to uppercase
         collector_number = parts[2] if len(parts) > 2 else None
-        foil = parts[3].lower() if len(parts) > 3 else None
+        foil = parts[3].lower() if len(parts) > 3 and parts[3] else None  # Convert to lowercase
         
         return card_name, set_code, collector_number, foil
     
@@ -306,7 +306,7 @@ def process_card_list(input_file: str, output_file: str, set_filter: Optional[st
         
         # Apply set filter if provided and not already specified
         if set_filter and not set_code:
-            set_code = set_filter
+            set_code = set_filter.upper()
         
         price_data = pricer.get_price_for_card(card_name, set_code, collector_number, foil)
         
@@ -547,7 +547,9 @@ Card List Format:
     if args.inventory_mode:
         if not args.sets:
             parser.error("--inventory-mode requires --sets")
-        generate_inventory_template(args.sets, args.output)
+        # Convert all set codes to uppercase
+        sets_upper = [s.upper() for s in args.sets]
+        generate_inventory_template(sets_upper, args.output)
     
     elif args.process_inventory:
         if not args.input:
