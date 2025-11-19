@@ -233,9 +233,12 @@ class CardPricer:
                     'price': prices['usd_etched']
                 })
         
-        # Filter by foil preference if specified
+        # Filter by foil preference if specified, default to nonfoil
         if foil:
             price_data = [p for p in price_data if p['finish'] == foil]
+        else:
+            # Default to nonfoil only when not specified
+            price_data = [p for p in price_data if p['finish'] == 'nonfoil']
         
         return price_data
     
@@ -243,12 +246,7 @@ class CardPricer:
         """Determine the finish type for a card."""
         if foil_pref:
             return foil_pref
-        
-        finishes = card.get('finishes', [])
-        if 'foil' in finishes and 'nonfoil' not in finishes:
-            return 'foil'
-        elif 'etched' in finishes and len(finishes) == 1:
-            return 'etched'
+        # Always default to nonfoil when not specified
         return 'nonfoil'
     
     def _get_relevant_price(self, prices: Dict, foil_pref: Optional[str]) -> Optional[float]:
