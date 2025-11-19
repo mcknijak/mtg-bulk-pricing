@@ -550,11 +550,16 @@ Card List Format:
     
     # Mode selection
     mode_group = parser.add_mutually_exclusive_group(required=True)
-    mode_group.add_argument('-i', '--input', help='Input file (txt or csv) with card names')
+    mode_group.add_argument('--price-list', action='store_true',
+                        help='Price a list of cards')
     mode_group.add_argument('--inventory-mode', action='store_true',
-                           help='Generate inventory template for specified sets')
+                        help='Generate inventory template')
     mode_group.add_argument('--calculate-value', action='store_true',
-                       help='Calculate total value from filled inventory template')
+                        help='Calculate inventory value')
+
+    # Input file (not mutually exclusive)
+    parser.add_argument('-i', '--input',
+                    help='Input file (required for --price-list and --calculate-value)')
     
     # Common arguments
     parser.add_argument('-o', '--output', required=True,
