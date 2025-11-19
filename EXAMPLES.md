@@ -1,12 +1,6 @@
 # MTG Pricer - Usage Examples
 
-This file contains real-world examples of how to use the MTG Card Pricing Tool.
-
-## 🆕 Key Features to Remember
-
-- **Case insensitive**: Type card names, sets, and finishes however you want!
-- **Nonfoil by default**: Unless you specify `|foil` or `|etched`, you'll get nonfoil prices
-- **Efficient inventory**: Prices are fetched during template generation (no separate processing step needed!)
+Here are some examples of inputs and outputs from using the tool. Everything is case insensitive and assumed nonfoil unless otherwise specified.
 
 ---
 
@@ -51,7 +45,7 @@ python mtg_pricer.py -i commander_deck.txt -o commander_prices.csv
 ```
 
 ### Result
-The output CSV will show min/max **nonfoil** prices for each card across all printings. This is perfect for most Commander decks where nonfoil cards are the norm!
+The output CSV will show min/max **nonfoil** prices for each card across all printings.
 
 ---
 
@@ -79,8 +73,6 @@ Lightning Bolt|MH2|130
 Lightning Bolt|MH2|130
 Lightning Bolt|MH2|130
 ```
-
-**Note:** Since we didn't specify a finish, these will all return nonfoil prices (the default).
 
 ### Step 2: Get the prices
 ```bash
@@ -126,9 +118,8 @@ python mtg_pricer.py -i expensive_cards.txt -o valuable_cards.csv
 python mtg_pricer.py --inventory-mode --sets MH3 MH2 BLB LCI WOE -o my_collection_template.csv
 ```
 
-This creates a CSV with ALL cards from those sets **with prices already populated**! 
+This creates a CSV with: 
 
-**What you get:**
 - Every card from the specified sets
 - Each finish type (nonfoil, foil, etched) gets its own row
 - Prices are already filled in
@@ -157,67 +148,21 @@ card_name,set,collector_number,rarity,finish,unit_price,quantity
 "Solitude",MH2,32,rare,etched,$35.00,
 ```
 
-### Step 3: Calculate total value (instant!)
+### Step 3: Calculate total value
 ```bash
 python mtg_pricer.py --calculate-value -i my_collection_template.csv -o collection_value.csv
 ```
 
-The script will calculate the total value **instantly** - no API calls needed!
+The script will calculate the total value and output another inventory file with just your cards.
 
-**Output shows:**
+**Console Output shows:**
 ```
 Total cards: 7
 Total inventory value: $314.00
 ```
-
-### Why This Workflow Is Better:
-- ✅ **Single API pass**: Only hits Scryfall once during template generation
-- ✅ **See prices while inventorying**: Make better decisions about what to track
-- ✅ **Instant calculations**: Value calculation is pure math, no waiting
-- ✅ **Separate foil tracking**: Each finish gets its own row, easier to manage
-
 ---
 
-## Example 5: Case Insensitivity - Type However You Want!
-
-The script is completely case insensitive. All of these work identically:
-
-### comparison.txt
-```
-# Different capitalizations - all work the same!
-lightning bolt
-Lightning Bolt
-LIGHTNING BOLT
-LiGhTnInG bOlT
-
-# Set codes - case doesn't matter
-counterspell|ice
-Counterspell|ICE
-COUNTERSPELL|Ice
-
-# Finish types - also case insensitive
-Tarmogoyf|fut|153|foil
-tarmogoyf|FUT|153|FOIL
-TARMOGOYF|Fut|153|Foil
-```
-
-```bash
-python mtg_pricer.py -i comparison.txt -o prices.csv
-```
-
-All entries will be processed correctly regardless of capitalization!
-
-**Command line is also case insensitive:**
-```bash
-# All of these work
-python mtg_pricer.py -i cards.txt -o prices.csv --set mh3
-python mtg_pricer.py -i cards.txt -o prices.csv --set MH3
-python mtg_pricer.py -i cards.txt -o prices.csv --set Mh3
-```
-
----
-
-## Example 6: Compare Printings of the Same Card
+## Example 5: Compare Printings of the Same Card
 
 Want to see price differences across different sets?
 
@@ -243,8 +188,6 @@ python mtg_pricer.py -i comparison.txt -o bolt_comparison.csv
 - Next entries show specific set printings (nonfoil by default unless specified)
 - Foil and etched entries show those specific prices
 
-This is great for comparing value between different versions!
-
 ---
 
 ## Example 7: Set-Specific Pricing
@@ -269,13 +212,11 @@ Volatile Stormdrake
 python mtg_pricer.py -i mh3_wants.txt -o mh3_prices.csv --set MH3
 ```
 
-This ensures you only see MH3 printings (nonfoil by default), even if cards appear in other sets. Note: `--set MH3` and `--set mh3` work the same!
+This ensures you only see MH3 printings (nonfoil by default), even if cards appear in other sets.
 
 ---
 
 ## Example 8: Foil vs Nonfoil Comparison
-
-Want to see the foil premium on expensive cards?
 
 ### foil_comparison.txt
 ```
@@ -290,14 +231,6 @@ Liliana of the Veil|ISD|105|foil
 ```bash
 python mtg_pricer.py -i foil_comparison.txt -o foil_prices.csv
 ```
-
-**Results show:**
-- Exact prices for both nonfoil and foil versions
-- Easy to see the foil premium (difference in price)
-- Each finish gets its own row in the output
-
-**Tip:** If you just put `Tarmogoyf|FUT|153` without specifying finish, you'd only get the nonfoil price (default behavior).
-
 ---
 
 ## Example 9: Bulk Commons and Uncommons
@@ -325,16 +258,16 @@ The min_price column will show you the cheapest **nonfoil** version available ac
 
 ---
 
-## Example 10: Track Sealed Product Value (Efficient!)
+## Example 10: Track Sealed Product Value
 
-After opening booster boxes, track what you pulled using the efficient new workflow:
+After opening booster boxes, track what you pulled:
 
 ### Step 1: Generate template with prices
 ```bash
 python mtg_pricer.py --inventory-mode --sets BLB -o bloomburrow_pulls.csv
 ```
 
-**What you get:** A CSV with every card from Bloomburrow, separated by finish (nonfoil, foil), with prices already populated!
+**What you get:** A CSV with every card from Bloomburrow, separated by finish (nonfoil, foil), with current prices
 
 ### Step 2: Mark your pulls
 Open the CSV and fill in quantities. Example:
@@ -348,9 +281,6 @@ card_name,set,collector_number,rarity,finish,unit_price,quantity
 "Ygra, Eater of All",BLB,244,mythic,nonfoil,$15.00,1
 "Ygra, Eater of All",BLB,244,mythic,foil,$35.00,
 ```
-
-Just add quantities where you pulled cards!
-
 ### Step 3: Calculate value (instant!)
 ```bash
 python mtg_pricer.py --calculate-value -i bloomburrow_pulls.csv -o bloomburrow_value.csv
@@ -362,11 +292,7 @@ Total cards: 5
 Total inventory value: $24.45
 ```
 
-Compare the total value to what you paid for the box!
-
-**Old Way vs New Way:**
-- ❌ Old: Generate template → Fill in → Hit API again for prices
-- ✅ New: Generate template with prices → Fill in → Instant calculation
+Compare the total value to what you paid for the box
 
 ---
 
@@ -388,8 +314,6 @@ Fury|MH2|126|nonfoil
 ```bash
 python mtg_pricer.py -i selling_to_store.txt -o selling_prices.csv
 ```
-
-Stores typically offer 50-70% of the market price shown.
 
 ---
 
@@ -435,23 +359,15 @@ Problem: Modern Horizons 3 has multiple art variants
 Solution: Use collector number: "Emrakul the World Anew|MH3|6"
 ```
 
+
 ### Set code not working
 ```
 Problem: "--set mh3" doesn't work
 Solution: This should work! Set codes are case insensitive. 
 If it's not working, verify the set code at scryfall.com/sets
 ```
-
 ---
 
 ## Pro Tips
 
-- **Keep a master inventory**: Use inventory mode quarterly to track collection value
-- **Type naturally**: Don't worry about capitalization - the script handles it
-- **Default to nonfoil**: Most cards are nonfoil, so the default saves you time
-- **Inventory workflow**: Generate template with prices → Fill quantities → Instant value (much faster!)
-- **Compare before buying**: Check prices before trades or purchases
-- **Track sealed products**: Record box EV (expected value) vs actual pulls using inventory mode
-- **Update regularly**: Prices change daily, especially for new sets - re-run monthly
 - **Use comments**: Add # comments in your input files to organize sections (e.g., "# Sideboard")
-- **Separate foils**: In inventory mode, each finish has its own row for precise tracking
