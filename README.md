@@ -195,7 +195,7 @@ Card Name|SET|123|foil
 1. Open your deck or collection in Archidekt
 2. Click **Export**
 3. Select **Text** as file type
-4. Under **Format**, choose the default format (should include set code and collector number)
+4. Under **Format**, choose the default format (can include set code and collector number)
 5. Download the file
 
 **Format detected:** `1 Card Name (SET) 123`
@@ -225,7 +225,7 @@ Count,Card Name,Edition,Collector Number,Foil
 1. Open your deck in Moxfield
 2. Click **Export**
 3. Select **Text** format
-4. Make sure the format includes set codes (in parentheses) and collector numbers
+4. Check off set codes, collector numbers, and/or foil status if you want to include them
 5. Copy or download the text
 
 **Format detected:** `1 Card Name (SET) 123`
@@ -249,7 +249,7 @@ Count,Tradelist Count,Name,Edition,Condition,Language,Foil,Tags,Last Modified,Co
 1,0,Ragavan Nimble Pilferer,MH2,Near Mint,English,foil,2024-01-15 12:00:00,138
 ```
 
-**Note:** Extra columns (Condition, Language, Tags, etc.) are fine - the script will ignore them!
+**Note:** Extra columns (Condition, Language, Tags, etc.) are fine - the script will ignore them
 
 ### Generic CSV Format
 
@@ -409,7 +409,7 @@ Ancestral Recall|LEA|161
 python mtg_pricer.py -i expensive_cards.txt -o expensive_prices.csv
 ```
 
-### Example 3: Inventory Management for New Set (Efficient!)
+### Example 3: Inventory Management for New Set
 
 ```bash
 # Step 1: Generate template with prices already included (single API pass)
@@ -422,9 +422,7 @@ python mtg_pricer.py --inventory-mode --sets FDN -o foundations_template.csv
 python mtg_pricer.py --calculate-value -i foundations_template.csv -o my_foundations_value.csv
 ```
 
-**Why this is better:** Only hits the API once instead of twice!
-
-### Example 4: Multiple Formats of Same Card (Case Insensitive!)
+### Example 4: Multiple Formats of Same Card
 
 **comparison.txt:**
 ```
@@ -535,4 +533,3 @@ For issues or questions:
 
 - **Scryfall** for providing an excellent free API
 - **TCGPlayer** for pricing data
-- The MTG community for feedback and support
