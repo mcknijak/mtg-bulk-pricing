@@ -876,23 +876,47 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Price a simple card list (returns nonfoil by default)
+  # Price a simple card list
   python mtg_pricer.py -i cards.txt -o prices.csv
   
-  # Price cards from a specific set only (case insensitive)
+  # Price cards from a specific set only
   python mtg_pricer.py -i cards.txt -o prices.csv --set one
   
-  # Generate inventory template with prices (single API pass)
+  # Generate inventory template with prices
   python mtg_pricer.py --inventory-mode --sets MH3 OTJ -o template.csv
   
-  # Calculate inventory value from filled template (no API calls)
+  # Calculate inventory value from filled template
   python mtg_pricer.py --calculate-value -i filled_template.csv -o inventory_value.csv
 
-Card List Format:
-  Card Name                    (nonfoil by default)
-  Card Name|SET                (case insensitive)
-  Card Name|SET|123            (specific printing)
-  Card Name|SET|123|foil       (specific finish)
+Supported Input Formats (Auto-detected):
+  
+  Standard Format:
+    Card Name
+    Card Name|SET
+    Card Name|SET|123
+    Card Name|SET|123|foil
+  
+  Archidekt/Moxfield Text Export:
+    1 Card Name (SET) 123
+    1 Card Name (SET) 123 *F*
+    1 Card Name (SET) 123 *E*
+    4 Card Name (SET)
+    1 Card Name
+  
+  Archidekt CSV Export:
+    Required Columns: Count, Card Name, Edition, Collector Number, Foil
+  
+  Moxfield CSV Export:
+    Required Columns: Count, Name, Edition, Collector Number, Foil
+  
+  Generic CSV:
+    Columns: Quantity, Card Name, Set Code, Collector Number, Finish
+
+Notes:
+  - All formats are case insensitive
+  - Nonfoil is default when finish not specified
+  - *F* = foil, *E* = etched
+  - Comments start with #
         """
     )
     
