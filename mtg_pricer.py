@@ -775,7 +775,7 @@ def generate_inventory_template(set_codes: List[str], output_file: str, include_
         print(f"\nInventory template written to {output_file}")
         print(f"Total cards/finishes: {len(all_cards)}")
         print("Please fill in the 'quantity' column for cards you have.")
-        print("Prices are already populated - just add quantities and run calculate-value mode!")
+        print("Current Prices are included - just add quantities and run calculate-value mode")
     except Exception as e:
         print(f"Error writing template file: {e}", file=sys.stderr)
         sys.exit(1)
@@ -876,52 +876,48 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Price a simple card list
+  # Price a simple card list (returns nonfoil by default)
   python mtg_pricer.py -i cards.txt -o prices.csv
   
-  # Price cards from a specific set only
-  python mtg_pricer.py -i cards.txt -o prices.csv --set ONE
+  # Price cards from a specific set only (case insensitive)
+  python mtg_pricer.py -i cards.txt -o prices.csv --set one
   
-  # Generate inventory template for sets
+  # Generate inventory template with prices (single API pass)
   python mtg_pricer.py --inventory-mode --sets MH3 OTJ -o template.csv
   
-  # Calculate inventory value
+  # Calculate inventory value from filled template (no API calls)
   python mtg_pricer.py --calculate-value -i filled_template.csv -o inventory_value.csv
 
 Card List Format:
-  Card Name
-  Card Name|SET
-  Card Name|SET|123
-  Card Name|SET|123|foil
+  Card Name                    (nonfoil by default)
+  Card Name|SET                (case insensitive)
+  Card Name|SET|123            (specific printing)
+  Card Name|SET|123|foil       (specific finish)
         """
     )
     
-    # Mode selection
-    mode_group = parser.add_mutually_exclusive_group(required=True)
-    mode_group.add_argument('--price-list', action='store_true',
-                        help='Price a list of cards')
+    # Mode selection (optional - defaults to price-list mode)
+    mode_group = parser.add_mutually_exclusive_group(required=False)
     mode_group.add_argument('--inventory-mode', action='store_true',
-                        help='Generate inventory template')
+                           help='Generate inventory template for specified sets')
     mode_group.add_argument('--calculate-value', action='store_true',
-                        help='Calculate inventory value')
-
-    # Input file (not mutually exclusive)
-    parser.add_argument('-i', '--input',
-                    help='Input file (required for --price-list and --calculate-value)')
+                           help='Calculate total value from filled inventory template')
     
-    # Common arguments
+    # Input/output files
+    parser.add_argument('-i', '--input',
+                       help='Input file (txt or csv)')
     parser.add_argument('-o', '--output', required=True,
                        help='Output CSV file')
     parser.add_argument('--set', dest='set_filter',
-                       help='Filter all cards to a specific set code')
+                       help='Filter cards to specific set (case insensitive)')
     
     # Inventory mode arguments
     parser.add_argument('--sets', nargs='+',
-                       help='Set codes for inventory mode (space-separated)')
+                       help='Set codes for inventory mode (case insensitive)')
     
     args = parser.parse_args()
     
-    # Validate arguments
+    # Validate arguments based on mode
     if args.inventory_mode:
         if not args.sets:
             parser.error("--inventory-mode requires --sets")
@@ -935,8 +931,10 @@ Card List Format:
         calculate_inventory_value(args.input, args.output)
     
     else:
-        # Standard card list processing
-        process_card_list(args.input, args.output, args.set_filter)
+        # Default mode: price list
+        if not args.input:
+            parser.error("price list mode requires --input")
+        process_card_list(args.input, args.output, args.set_filter.upper() if args.set_filter else None)
 
 
 if __name__ == '__main__':
