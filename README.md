@@ -14,18 +14,6 @@ A Python command-line tool for retrieving Magic: The Gathering card prices using
 - 🎴 **Set Filtering**: Restrict searches to specific sets
 - 📁 **CSV Export**: All results exported to convenient CSV format
 
-## What's New in v1.1
-
-### Recent Improvements
-
-✨ **Nonfoil Default**: Script now defaults to nonfoil prices when finish isn't specified - the most common use case!
-
-🔤 **Case Insensitive**: Card names, set codes, and finish types now work with any capitalization.
-
-⚡ **Efficient Inventory Mode**: Prices are now fetched during template generation (single API pass) instead of requiring a separate processing step. This makes inventory management **much faster**!
-
-🎯 **Better Workflow**: The new `--calculate-value` mode does instant calculations without hitting the API.
-
 ## Installation
 
 ### Prerequisites
@@ -45,6 +33,36 @@ pip install requests
 3. Make the script executable (optional, Linux/Mac):
 ```bash
 chmod +x mtg_pricer.py
+```
+
+## Command Reference
+
+### All Command-Line Options
+
+```
+-i, --input FILE            Input file with card list
+-o, --output FILE           Output CSV file (required)
+--set CODE                  Filter cards to specific set (case insensitive)
+--inventory-mode            Generate inventory template with prices
+--sets CODE [CODE ...]      Set codes for inventory mode (case insensitive)
+--calculate-value           Calculate total value from filled inventory
+-h, --help                  Show help message
+```
+
+### Usage Examples
+
+```bash
+# Basic price check
+python mtg_pricer.py -i cards.txt -o prices.csv
+
+# Set-specific pricing
+python mtg_pricer.py -i cards.txt -o prices.csv --set mh3
+
+# Generate inventory with prices (single API pass)
+python mtg_pricer.py --inventory-mode --sets mh3 blb otj -o template.csv
+
+# Calculate inventory value (no API calls, instant)
+python mtg_pricer.py --calculate-value -i filled_template.csv -o value.csv
 ```
 
 ## Usage
@@ -112,7 +130,7 @@ This will only return prices for cards from Modern Horizons 3 (MH3), even if the
 
 ### Mode 4: Inventory Mode (Generate Template with Prices)
 
-Generate a CSV template containing all cards from one or more sets **with prices already populated**. This is much more efficient than the old two-step process!
+Generate a CSV template containing all cards from one or more sets **with prices already populated**.
 
 **Command:**
 ```bash
@@ -131,8 +149,6 @@ python mtg_pricer.py --inventory-mode --sets MH3 OTJ LCI -o inventory_template.c
 - **Finish type** (nonfoil, foil, or etched) - each finish gets its own row
 - **Unit price** - already populated from the API!
 - **Quantity** - empty column for you to fill in
-
-**Key Improvement:** Prices are fetched in the same API call as card data, making this much faster than before!
 
 ### Mode 5: Calculate Inventory Value
 
@@ -156,12 +172,6 @@ python mtg_pricer.py --calculate-value -i filled_inventory.csv -o inventory_valu
 - Unit price (already there from step 1)
 - Total price (quantity × unit price)
 - **Overall collection value** printed to console
-
-**Why This Is Better:**
-- ✅ Only hits the API once (during template generation)
-- ✅ You can see prices while deciding what to inventory
-- ✅ Value calculation is instant (no waiting for API calls)
-- ✅ Each finish type has its own row (easier to track foils separately)
 
 ## Understanding Foil vs Nonfoil Behavior
 
@@ -315,7 +325,7 @@ Lightning Bolt|2XM|141|FOIL
 python mtg_pricer.py -i comparison.txt -o bolt_comparison.csv
 ```
 
-This shows the price range across all printings, plus specific prices for M11, Alpha, and 2XM foil versions. Notice how case doesn't matter!
+This shows the price range across all printings, plus specific prices for M11, Alpha, and 2XM foil versions.
 
 ## Troubleshooting
 
@@ -351,8 +361,6 @@ This tool uses the **Scryfall API**, which is:
 - Comprehensive and up-to-date
 - Rate-limited to 10 requests per second
 
-**Note on TCGPlayer/Card Kingdom:** While the script is designed to support multiple APIs, TCGPlayer and Card Kingdom APIs require merchant accounts and complex authentication. Scryfall provides the same pricing data (sourced from TCGPlayer) without authentication requirements.
-
 ## Data Source
 
 Prices are sourced from:
@@ -379,40 +387,6 @@ Prices are sourced from:
 
 ### Output Files
 - **CSV** (`.csv`): Compatible with Excel, Google Sheets, etc.
-
-## Command Reference
-
-### All Command-Line Options
-
-```
--i, --input FILE            Input file with card list
--o, --output FILE           Output CSV file (required)
---set CODE                  Filter cards to specific set (case insensitive)
---inventory-mode            Generate inventory template with prices
---sets CODE [CODE ...]      Set codes for inventory mode (case insensitive)
---calculate-value           Calculate total value from filled inventory
--h, --help                  Show help message
-```
-
-### Usage Examples
-
-```bash
-# Basic price check
-python mtg_pricer.py -i cards.txt -o prices.csv
-
-# Set-specific pricing
-python mtg_pricer.py -i cards.txt -o prices.csv --set mh3
-
-# Generate inventory with prices (single API pass)
-python mtg_pricer.py --inventory-mode --sets mh3 blb otj -o template.csv
-
-# Calculate inventory value (no API calls, instant)
-python mtg_pricer.py --calculate-value -i filled_template.csv -o value.csv
-```
-
-## Version History
-
-- **v1.0** - Initial release with Scryfall API support
 
 ## License
 
