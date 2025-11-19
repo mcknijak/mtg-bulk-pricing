@@ -1,6 +1,6 @@
 # MTG Card Pricing Tool
 
-A Python command-line tool for retrieving Magic: The Gathering card prices using the Scryfall API. This tool supports multiple modes of operation including simple card list pricing, set-filtered pricing, and efficient inventory management.
+A Python command-line tool for retrieving Magic: The Gathering card prices using the Scryfall API. This tool supports multiple modes of operation including simple card list pricing, set-filtered pricing, and set-based bulk pricing.
 
 ## Features
 
