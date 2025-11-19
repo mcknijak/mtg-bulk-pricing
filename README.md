@@ -4,15 +4,14 @@ A Python command-line tool for retrieving Magic: The Gathering card prices using
 
 ## Features
 
-- 🔍 **Card Price Lookup**: Get current market prices for any MTG card
+- 🔍 **Card Price Lookup**: Get current market prices for any MTG card or card list
 - 📊 **Min/Max Pricing**: Automatically finds cheapest and most expensive printings
 - 🎯 **Specific Printing Support**: Look up exact printings by set and collector number
 - ✨ **Foil/Nonfoil Support**: Handle different card finishes (nonfoil, foil, etched)
-- 🎲 **Smart Defaults**: Defaults to nonfoil prices when finish not specified
 - 🔤 **Case Insensitive**: Works with any capitalization for card names, sets, and finishes
-- 📦 **Efficient Inventory Mode**: Generate set checklists with prices in one API pass
+- 📦 **Inventory Mode**: Generate set checklists with prices to get ROI on a box or get an estimated price for cards you are looking to sell.
 - 🎴 **Set Filtering**: Restrict searches to specific sets
-- 📁 **CSV Export**: All results exported to convenient CSV format
+- 📁 **CSV Export**: All results exported to CSV format
 
 ## Installation
 
@@ -58,12 +57,14 @@ python mtg_pricer.py -i cards.txt -o prices.csv
 # Set-specific pricing
 python mtg_pricer.py -i cards.txt -o prices.csv --set mh3
 
-# Generate inventory with prices (single API pass)
+# Generate inventory with prices
 python mtg_pricer.py --inventory-mode --sets mh3 blb otj -o template.csv
 
-# Calculate inventory value (no API calls, instant)
+# Calculate inventory value 
 python mtg_pricer.py --calculate-value -i filled_template.csv -o value.csv
 ```
+
+**Note: FILEs provided must have the absolute file path or relative file path from the python script. For ease of use, keep files in the same directory as the script.**
 
 ## Usage
 
@@ -86,11 +87,11 @@ Tarmogoyf
 
 **Output:** CSV with card names, min/max nonfoil prices, and printing details.
 
-**Note:** Card names and set codes are **case insensitive** - "lightning bolt" works just as well as "Lightning Bolt"!
+*Note: Runs at a rate of 10 cards/sec to respect Scryfall API Rate Limiting*
 
 ### Mode 2: Specific Card Printings
 
-Look up exact card printings using set codes and collector numbers.
+Look up card printings using set codes and collector numbers.
 
 **Input File Format** (`specific_cards.txt`):
 ```
@@ -102,8 +103,8 @@ Tarmogoyf|FUT|153|foil
 
 **Format Explanation:**
 - `Card Name` - Just the card name (returns cheapest/most expensive **nonfoil** printings by default)
-- `Card Name|SET` - Card from specific set (nonfoil by default)
-- `Card Name|SET|123` - Specific printing by collector number (nonfoil by default)
+- `Card Name|SET` - Card from specific set
+- `Card Name|SET|123` - Specific printing by collector number
 - `Card Name|SET|123|foil` - Specific foil version
 - `Card Name|SET|123|etched` - Specific etched version
 
@@ -130,7 +131,7 @@ This will only return prices for cards from Modern Horizons 3 (MH3), even if the
 
 ### Mode 4: Inventory Mode (Generate Template with Prices)
 
-Generate a CSV template containing all cards from one or more sets **with prices already populated**.
+Generate a CSV template containing all cards from one or more sets.
 
 **Command:**
 ```bash
@@ -147,17 +148,17 @@ python mtg_pricer.py --inventory-mode --sets MH3 OTJ LCI -o inventory_template.c
 **Output:** CSV template with all cards from the specified sets, including:
 - Card name, set, collector number, rarity
 - **Finish type** (nonfoil, foil, or etched) - each finish gets its own row
-- **Unit price** - already populated from the API!
+- **Unit price** - the current price from the Scryfall API!
 - **Quantity** - empty column for you to fill in
 
 ### Mode 5: Calculate Inventory Value
 
-After filling in quantities in the template from Mode 4, calculate the total value. **This step requires NO API calls** - it just does math on the existing data!
+After filling in quantities in the template from Mode 4, calculate the total value.
 
 **Steps:**
 
 1. Generate template with prices (see Mode 4)
-2. Open the CSV in Excel or Google Sheets
+2. Open the CSV in an editor like Excel or Google Sheets
 3. Fill in the `quantity` column for cards you own
 4. Save the file
 5. Run the calculation command:
@@ -173,11 +174,127 @@ python mtg_pricer.py --calculate-value -i filled_inventory.csv -o inventory_valu
 - Total price (quantity × unit price)
 - **Overall collection value** printed to console
 
-## Understanding Foil vs Nonfoil Behavior
+
+## Supported File Formats
+
+### Standard Text Format (.txt)
+
+Our simple pipe-delimited format:
+```
+Card Name
+Card Name|SET
+Card Name|SET|123
+Card Name|SET|123|foil
+```
+
+**Comments:** Lines starting with `#` are ignored.
+
+### Archidekt Export
+
+#### Text Export (Recommended)
+1. Open your deck or collection in Archidekt
+2. Click **Export**
+3. Select **Text** as file type
+4. Under **Format**, choose the default format (should include set code and collector number)
+5. Download the file
+
+**Format detected:** `1 Card Name (SET) 123`
+
+#### CSV Export
+1. Open your collection in Archidekt
+2. Click **Export**
+3. Select **CSV** as file type
+4. **Important:** Include these columns:
+   - Count (or Quantity)
+   - Card Name
+   - Edition (set name)
+   - Collector Number (optional but recommended)
+   - Foil (optional)
+5. Download the file
+
+**Example Archidekt CSV:**
+```csv
+Count,Card Name,Edition,Collector Number,Foil
+4,Lightning Bolt,Modern Horizons 2,130,No
+1,Ragavan Nimble Pilferer,Modern Horizons 2,138,Yes
+```
+
+### Moxfield Export
+
+#### Text Export (Recommended)
+1. Open your deck in Moxfield
+2. Click **Export**
+3. Select **Text** format
+4. Make sure the format includes set codes (in parentheses) and collector numbers
+5. Copy or download the text
+
+**Format detected:** `1 Card Name (SET) 123`
+
+#### CSV Export
+1. Go to your collection in Moxfield
+2. Click **Export**
+3. Select **CSV** format
+4. **Important:** The export should include these columns:
+   - Count
+   - Name
+   - Edition (set code)
+   - Collector Number
+   - Foil (optional)
+5. Download the file
+
+**Example Moxfield CSV:**
+```csv
+Count,Tradelist Count,Name,Edition,Condition,Language,Foil,Tags,Last Modified,Collector Number
+4,0,Lightning Bolt,MH2,Near Mint,English,,2024-01-15 12:00:00,130
+1,0,Ragavan Nimble Pilferer,MH2,Near Mint,English,foil,2024-01-15 12:00:00,138
+```
+
+**Note:** Extra columns (Condition, Language, Tags, etc.) are fine - the script will ignore them!
+
+### Generic CSV Format
+
+Any CSV with at minimum these columns (in order):
+```csv
+Quantity,Card Name,Set Code,Collector Number,Finish
+4,Lightning Bolt,MH2,130,nonfoil
+1,Tarmogoyf,FUT,153,foil
+```
+### Examples
+
+**Archidekt Text Export:**
+```
+1 Gylwain, Casting Director (WOC) 4
+4 Lightning Bolt (MH2) 130
+1 Ragavan, Nimble Pilferer (MH2) 138 *F*
+1 Solitude (MH2) 32 *E*
+```
+
+**Moxfield Text Export:**
+```
+1 Gylwain, Casting Director (WOC) 4
+4 Lightning Bolt (MH2) 130
+1 Ragavan, Nimble Pilferer (MH2) 138 *F*
+1 Solitude (MH2) 32 *E*
+```
+
+**Standard Format:**
+```
+Gylwain, Casting Director|WOC|4
+Lightning Bolt|MH2|130
+Ragavan, Nimble Pilferer|MH2|138|foil
+Solitude|MH2|32|etched
+```
+**Finish Markers Supported:**
+- `*F*` or `[F]` or `foil` → Foil
+- `*E*` or `[E]` or `etched` → Etched
+- No marker → Nonfoil (default)
+
+
+## Foil vs Nonfoil
 
 ### Default Behavior: Nonfoil Only
 
-**When you don't specify a finish, the script defaults to nonfoil prices only.** This is the most common use case and avoids confusion.
+**When you don't specify a finish, the script defaults to nonfoil prices only.**
 
 **Example:**
 ```
@@ -244,9 +361,6 @@ card_name,set,collector_number,finish,min_price,max_price,min_printing,max_print
 Lightning Bolt,Multiple,Multiple,nonfoil,$0.15,$45.00,M11 #146 (nonfoil),LEA #161 (nonfoil)
 Counterspell,ICE,64,nonfoil,$2.50,$2.50,ICE #64 (nonfoil),ICE #64 (nonfoil)
 ```
-
-**Note:** When finish is not specified, only nonfoil prices are returned by default.
-
 ### Inventory Output
 
 ```csv
@@ -332,7 +446,7 @@ This shows the price range across all printings, plus specific prices for M11, A
 ### "Card Not Found"
 
 - **Cause**: Card name misspelled or doesn't exist in the specified set
-- **Solution**: Check spelling against [Scryfall](https://scryfall.com). Note: Case doesn't matter, but spelling does!
+- **Solution**: Check spelling against [Scryfall](https://scryfall.com). Note: Case doesn't matter, but spelling does
 
 ### "Getting foil prices when I want nonfoil" or vice versa
 
@@ -352,6 +466,23 @@ The script includes built-in rate limiting to respect Scryfall's API guidelines 
 
 - **Cause**: Invalid or incorrect set code (though case doesn't matter)
 - **Solution**: Verify set codes at [Scryfall Sets](https://scryfall.com/sets). You can use any capitalization: `mh3`, `MH3`, or `Mh3` all work.
+  
+### File Format Not Detected
+
+**Problem:** Script doesn't recognize your file format  
+**Solutions:**
+- For Archidekt text exports: Make sure format includes `(SET)` in parentheses
+- For Moxfield text exports: Same requirement - `(SET)` must be present
+- For CSV files: Check that you have a header row with column names
+- If all else fails: Convert to standard format using `|` delimiters
+
+### Cards Not Found from Archidekt/Moxfield Export
+
+**Problem:** Some cards show "Not Found"  
+**Possible causes:**
+- Set code in parentheses might be non-standard
+- Card name might include special characters that need cleaning
+**Solution:** Check the card on Scryfall.com to verify set code and exact name
 
 ## API Information
 
