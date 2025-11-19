@@ -378,8 +378,8 @@ def process_card_list(input_file: str, output_file: str, set_filter: Optional[st
         sys.exit(1)
 
 
-def generate_inventory_template(set_codes: List[str], output_file: str):
-    """Generate an inventory template CSV for the specified sets."""
+def generate_inventory_template(set_codes: List[str], output_file: str, include_prices: bool = True):
+    """Generate an inventory template CSV for the specified sets, optionally with prices already populated."""
     
     api = ScryfallAPI()
     
@@ -389,37 +389,52 @@ def generate_inventory_template(set_codes: List[str], output_file: str):
         cards = api.get_set_cards(set_code)
         
         for card in cards:
-            all_cards.append({
-                'card_name': card.get('name'),
-                'set': card.get('set').upper(),
-                'collector_number': card.get('collector_number'),
-                'rarity': card.get('rarity'),
-                'finishes': ','.join(card.get('finishes', [])),
-                'quantity': '',  # User fills this in
-                'finish': ''  # User fills this in (nonfoil/foil/etched)
-            })
+            prices = api.extract_prices(card)
+            
+            # Add entry for each available finish
+            finishes = card.get('finishes', [])
+            
+            for finish in finishes:
+                # Determine which price to use
+                if finish == 'nonfoil':
+                    price = prices['usd']
+                elif finish == 'foil':
+                    price = prices['usd_foil']
+                elif finish == 'etched':
+                    price = prices['usd_etched']
+                else:
+                    price = None
+                
+                all_cards.append({
+                    'card_name': card.get('name'),
+                    'set': card.get('set').upper(),
+                    'collector_number': card.get('collector_number'),
+                    'rarity': card.get('rarity'),
+                    'finish': finish,
+                    'unit_price': f"${price:.2f}" if price else 'N/A',
+                    'quantity': '',  # User fills this in
+                })
     
     # Write template
     try:
         with open(output_file, 'w', newline='', encoding='utf-8') as f:
             fieldnames = ['card_name', 'set', 'collector_number', 'rarity', 
-                         'finishes', 'quantity', 'finish']
+                         'finish', 'unit_price', 'quantity']
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(all_cards)
         
         print(f"\nInventory template written to {output_file}")
-        print("Please fill in the 'quantity' and 'finish' columns for cards you have.")
+        print(f"Total cards/finishes: {len(all_cards)}")
+        print("Please fill in the 'quantity' column for cards you have.")
+        print("Prices are already populated - just add quantities and run calculate-value mode!")
     except Exception as e:
         print(f"Error writing template file: {e}", file=sys.stderr)
         sys.exit(1)
 
 
-def process_inventory(input_file: str, output_file: str):
-    """Process a filled inventory template and generate pricing."""
-    
-    api = ScryfallAPI()
-    pricer = CardPricer(api)
+def calculate_inventory_value(input_file: str, output_file: str):
+    """Calculate total value from an inventory template that already has prices."""
     
     # Read inventory file
     inventory_items = []
@@ -434,63 +449,73 @@ def process_inventory(input_file: str, output_file: str):
         print(f"Error reading inventory file: {e}", file=sys.stderr)
         sys.exit(1)
     
-    # Process inventory
-    results = []
-    total_items = len(inventory_items)
+    if not inventory_items:
+        print("No items with quantities found in inventory file.")
+        sys.exit(1)
     
-    for idx, item in enumerate(inventory_items, 1):
+    # Calculate values
+    results = []
+    total_value = 0
+    
+    for item in inventory_items:
         card_name = item['card_name']
         set_code = item['set']
         collector_number = item['collector_number']
-        finish = item.get('finish', '').strip().lower() or None
+        finish = item.get('finish', 'nonfoil')
         quantity = int(item['quantity'])
         
-        print(f"Processing {idx}/{total_items}: {card_name} ({set_code} #{collector_number}) x{quantity}")
-        
-        price_data = pricer.get_price_for_card(card_name, set_code, collector_number, finish)
-        
-        if price_data:
-            card = price_data[0]
-            unit_price = card['price']
-            total_price = unit_price * quantity if unit_price else None
-            
-            results.append({
-                'card_name': card['card_name'],
-                'set': card['set'],
-                'collector_number': card['collector_number'],
-                'finish': card['finish'],
-                'quantity': quantity,
-                'unit_price': f"${unit_price:.2f}" if unit_price else 'N/A',
-                'total_price': f"${total_price:.2f}" if total_price else 'N/A'
-            })
+        # Parse unit price
+        unit_price_str = item.get('unit_price', 'N/A')
+        if unit_price_str != 'N/A' and unit_price_str.startswith('$'):
+            try:
+                unit_price = float(unit_price_str.replace('$', ''))
+                total_price = unit_price * quantity
+                total_value += total_price
+                
+                results.append({
+                    'card_name': card_name,
+                    'set': set_code,
+                    'collector_number': collector_number,
+                    'rarity': item.get('rarity', 'N/A'),
+                    'finish': finish,
+                    'quantity': quantity,
+                    'unit_price': f"${unit_price:.2f}",
+                    'total_price': f"${total_price:.2f}"
+                })
+            except ValueError:
+                results.append({
+                    'card_name': card_name,
+                    'set': set_code,
+                    'collector_number': collector_number,
+                    'rarity': item.get('rarity', 'N/A'),
+                    'finish': finish,
+                    'quantity': quantity,
+                    'unit_price': 'Invalid Price',
+                    'total_price': 'N/A'
+                })
         else:
             results.append({
                 'card_name': card_name,
                 'set': set_code,
                 'collector_number': collector_number,
-                'finish': finish or 'N/A',
+                'rarity': item.get('rarity', 'N/A'),
+                'finish': finish,
                 'quantity': quantity,
-                'unit_price': 'Not Found',
-                'total_price': 'Not Found'
+                'unit_price': 'No Price Data',
+                'total_price': 'N/A'
             })
     
     # Write results
     try:
         with open(output_file, 'w', newline='', encoding='utf-8') as f:
-            fieldnames = ['card_name', 'set', 'collector_number', 'finish', 
+            fieldnames = ['card_name', 'set', 'collector_number', 'rarity', 'finish', 
                          'quantity', 'unit_price', 'total_price']
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(results)
         
-        print(f"\nInventory pricing written to {output_file}")
-        
-        # Calculate total value
-        total_value = 0
-        for result in results:
-            if result['total_price'] not in ['N/A', 'Not Found']:
-                total_value += float(result['total_price'].replace('$', ''))
-        
+        print(f"\nInventory value written to {output_file}")
+        print(f"Total cards: {sum(r['quantity'] for r in results)}")
         print(f"Total inventory value: ${total_value:.2f}")
     except Exception as e:
         print(f"Error writing output file: {e}", file=sys.stderr)
@@ -512,8 +537,8 @@ Examples:
   # Generate inventory template for sets
   python mtg_pricer.py --inventory-mode --sets MH3 OTJ -o template.csv
   
-  # Process filled inventory
-  python mtg_pricer.py --process-inventory -i filled_template.csv -o inventory_prices.csv
+  # Calculate inventory value
+  python mtg_pricer.py --calculate-value -i filled_template.csv -o inventory_value.csv
 
 Card List Format:
   Card Name
@@ -528,8 +553,8 @@ Card List Format:
     mode_group.add_argument('-i', '--input', help='Input file (txt or csv) with card names')
     mode_group.add_argument('--inventory-mode', action='store_true',
                            help='Generate inventory template for specified sets')
-    mode_group.add_argument('--process-inventory', action='store_true',
-                           help='Process filled inventory template')
+    mode_group.add_argument('--calculate-value', action='store_true',
+                       help='Calculate total value from filled inventory template')
     
     # Common arguments
     parser.add_argument('-o', '--output', required=True,
@@ -551,10 +576,10 @@ Card List Format:
         sets_upper = [s.upper() for s in args.sets]
         generate_inventory_template(sets_upper, args.output)
     
-    elif args.process_inventory:
+    elif args.calculate_value:
         if not args.input:
-            parser.error("--process-inventory requires --input")
-        process_inventory(args.input, args.output)
+            parser.error("--calculate-value requires --input")
+        calculate_inventory_value(args.input, args.output)
     
     else:
         # Standard card list processing
