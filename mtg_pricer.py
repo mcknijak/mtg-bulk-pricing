@@ -5,11 +5,13 @@ A comprehensive script to retrieve Magic: The Gathering card prices from Scryfal
 """
 
 import argparse
+from abc import ABC, abstractmethod
 import csv
 import json
 import os
 import sys
 import time
+import re
 from typing import List, Dict, Optional, Tuple
 import requests # type: ignore
 from pathlib import Path
@@ -276,282 +278,328 @@ class CardPricer:
         
         return cheapest, most_expensive
 
-
-def detect_csv_format(file_path: str) -> Optional[str]:
-    """
-    Detect if a CSV file is in Archidekt or Moxfield format.
+class CardParser(ABC):
+    """Base class for card list parsers."""
     
-    Returns:
-        'archidekt', 'moxfield', or None
-    """
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            first_line = f.readline().strip().lower()
-            
-            # Check for Archidekt format
-            if 'card name' in first_line and 'edition' in first_line:
-                return 'archidekt'
-            
-            # Check for Moxfield format
-            if 'tradelist count' in first_line and 'collector number' in first_line:
-                return 'moxfield'
-            
-            # Check for generic quantity,name,set format
-            if first_line.count(',') >= 2:
-                parts = first_line.split(',')
-                # If first column looks like it could be quantity
-                if parts[0].strip() in ['count', 'quantity', 'qty', 'amount']:
-                    return 'generic_csv'
-            
-            return None
-    except Exception:
-        return None
-
-
-def parse_archidekt_csv(file_path: str) -> List[Tuple[str, Optional[str], Optional[str], Optional[str], int]]:
-    """
-    Parse Archidekt CSV format.
+    @abstractmethod
+    def can_parse(self, file_path: str) -> bool:
+        """Check if this parser can handle the file format."""
+        pass
     
-    Returns:
-        List of (card_name, set_code, collector_number, foil, quantity) tuples
-    """
-    cards = []
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                quantity = int(row.get('Count', row.get('Quantity', '1')))
-                card_name = row.get('Card Name', row.get('Name', '')).strip()
-                
-                # Archidekt uses "Edition" for set name, need to convert to set code
-                edition = row.get('Edition', '').strip()
-                set_code = None
-                
-                collector_number = row.get('Collector Number', '').strip() or None
-                
-                # Foil handling
-                foil_value = row.get('Foil', '').strip().lower()
-                foil = 'foil' if foil_value in ['yes', 'true', '1', 'foil'] else None
-                
-                if card_name:
-                    for _ in range(quantity):
-                        cards.append((card_name, set_code, collector_number, foil, 1))
-    
-    except Exception as e:
-        print(f"Error parsing Archidekt CSV: {e}", file=sys.stderr)
-    
-    return cards
-
-
-def parse_moxfield_csv(file_path: str) -> List[Tuple[str, Optional[str], Optional[str], Optional[str], int]]:
-    """
-    Parse Moxfield CSV format.
-    
-    Returns:
-        List of (card_name, set_code, collector_number, foil, quantity) tuples
-    """
-    cards = []
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                quantity = int(row.get('Count', '1'))
-                card_name = row.get('Name', '').strip()
-                
-                # Moxfield uses "Edition" which is the set code
-                set_code = row.get('Edition', '').strip().upper() or None
-                
-                collector_number = row.get('Collector Number', '').strip() or None
-                
-                # Foil handling
-                foil_value = row.get('Foil', '').strip().lower()
-                if foil_value in ['foil', 'etched']:
-                    foil = foil_value
-                else:
-                    foil = None
-                
-                if card_name:
-                    for _ in range(quantity):
-                        cards.append((card_name, set_code, collector_number, foil, 1))
-    
-    except Exception as e:
-        print(f"Error parsing Moxfield CSV: {e}", file=sys.stderr)
-    
-    return cards
-
-
-def parse_generic_csv(file_path: str) -> List[Tuple[str, Optional[str], Optional[str], Optional[str], int]]:
-    """
-    Parse generic CSV format (Quantity, Name, Set).
-    
-    Returns:
-        List of (card_name, set_code, collector_number, foil, quantity) tuples
-    """
-    cards = []
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            header = next(reader)  # Skip header
-            
-            for row in reader:
-                if len(row) < 2:
-                    continue
-                
-                quantity = int(row[0]) if row[0].isdigit() else 1
-                card_name = row[1].strip()
-                set_code = row[2].strip().upper() if len(row) > 2 and row[2] else None
-                collector_number = row[3].strip() if len(row) > 3 and row[3] else None
-                foil = row[4].strip().lower() if len(row) > 4 and row[4] else None
-                
-                if card_name:
-                    for _ in range(quantity):
-                        cards.append((card_name, set_code, collector_number, foil, 1))
-    
-    except Exception as e:
-        print(f"Error parsing generic CSV: {e}", file=sys.stderr)
-    
-    return cards
-
-def parse_deck_export_text(file_path: str) -> List[Tuple[str, Optional[str], Optional[str], Optional[str], int]]:
-    """
-    Parse deck export text format used by Archidekt and Moxfield.
-    Supports multiple formats:
-    - quantity card name (set code) collector_number
-    - quantity card name (set code)
-    - quantity card name
-    
-    Examples:
-    - 1 Gylwain, Casting Director (WOC) 4
-    - 4 Lightning Bolt (MH2)
-    - 1 Sol Ring
-    
-    Foil markers: *F* (foil), *E* (etched)
-    
-    Returns:
-        List of (card_name, set_code, collector_number, foil, quantity) tuples
-    """
-    import re
-    cards = []
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                
-                # Skip empty lines and comments
-                if not line or line.startswith('#'):
-                    continue
-                
-                # Pattern 1: quantity card_name (set) collector_number [*F*|*E*]
-                pattern_full = r'^(\d+)x?\s+(.+?)\s+\(([A-Z0-9]{3,4})\)\s+(\d+[a-z]?)\s*(\*F\*|\*E\*|\[F\]|\[E\]|foil|etched)?$'
-                match = re.match(pattern_full, line, re.IGNORECASE)
-                
-                if match:
-                    quantity = int(match.group(1))
-                    card_name = match.group(2).strip()
-                    set_code = match.group(3).upper()
-                    collector_number = match.group(4)
-                    finish_marker = match.group(5)
-                    
-                    foil = None
-                    if finish_marker:
-                        finish_marker_lower = finish_marker.lower()
-                        if '*f*' in finish_marker_lower or '[f]' in finish_marker_lower or finish_marker_lower == 'foil':
-                            foil = 'foil'
-                        elif '*e*' in finish_marker_lower or '[e]' in finish_marker_lower or finish_marker_lower == 'etched':
-                            foil = 'etched'
-                    
-                    for _ in range(quantity):
-                        cards.append((card_name, set_code, collector_number, foil, 1))
-                    continue
-                
-                # Pattern 2: quantity card_name (set) [*F*|*E*]
-                pattern_set = r'^(\d+)x?\s+(.+?)\s+\(([A-Z0-9]{3,4})\)\s*(\*F\*|\*E\*|\[F\]|\[E\]|foil|etched)?$'
-                match = re.match(pattern_set, line, re.IGNORECASE)
-                
-                if match:
-                    quantity = int(match.group(1))
-                    card_name = match.group(2).strip()
-                    set_code = match.group(3).upper()
-                    finish_marker = match.group(4)
-                    
-                    foil = None
-                    if finish_marker:
-                        finish_marker_lower = finish_marker.lower()
-                        if '*f*' in finish_marker_lower or '[f]' in finish_marker_lower or finish_marker_lower == 'foil':
-                            foil = 'foil'
-                        elif '*e*' in finish_marker_lower or '[e]' in finish_marker_lower or finish_marker_lower == 'etched':
-                            foil = 'etched'
-                    
-                    for _ in range(quantity):
-                        cards.append((card_name, set_code, None, foil, 1))
-                    continue
-                
-                # Pattern 3: quantity card_name [*F*|*E*]
-                pattern_simple = r'^(\d+)x?\s+(.+?)\s*(\*F\*|\*E\*|\[F\]|\[E\]|foil|etched)?$'
-                match = re.match(pattern_simple, line, re.IGNORECASE)
-                
-                if match:
-                    quantity = int(match.group(1))
-                    card_name = match.group(2).strip()
-                    finish_marker = match.group(3)
-                    
-                    foil = None
-                    if finish_marker:
-                        finish_marker_lower = finish_marker.lower()
-                        if '*f*' in finish_marker_lower or '[f]' in finish_marker_lower or finish_marker_lower == 'foil':
-                            foil = 'foil'
-                        elif '*e*' in finish_marker_lower or '[e]' in finish_marker_lower or finish_marker_lower == 'etched':
-                            foil = 'etched'
-                    
-                    for _ in range(quantity):
-                        cards.append((card_name, None, None, foil, 1))
-                    continue
-                
-                # If no pattern matched, print a warning
-                print(f"Warning: Could not parse line: {line}", file=sys.stderr)
-    
-    except Exception as e:
-        print(f"Error parsing deck export text: {e}", file=sys.stderr)
-    
-    return cards
-
-
-def detect_text_format(file_path: str) -> Optional[str]:
-    """
-    Detect if a text file is in deck export format or standard format.
-    
-    Returns:
-        'deck_export' or 'standard'
-    """
-    import re
-    
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                
-                # Check for deck export format: number card (SET) number
-                if re.match(r'^\d+x?\s+.+\([A-Z0-9]{3,4}\)', line, re.IGNORECASE):
-                    return 'deck_export'
-                
-                # If pipe delimiter, it's standard format
-                if '|' in line:
-                    return 'standard'
-                
-                # Check first non-comment line
-                break
+    @abstractmethod
+    def parse(self, file_path: str) -> List[Tuple[str, Optional[str], Optional[str], Optional[str], int]]:
+        """
+        Parse the file and return list of cards.
         
-        return 'standard'
+        Returns:
+            List of (card_name, set_code, collector_number, foil, quantity) tuples
+        """
+        pass
     
-    except Exception:
-        return 'standard'
+    @property
+    @abstractmethod
+    def format_name(self) -> str:
+        """Card Parser base Class."""
+        pass
+
+
+class StandardTextParser(CardParser):
+    """Parser for standard pipe-delimited format."""
     
+    def can_parse(self, file_path: str) -> bool:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        # If we see a pipe delimiter, it's standard format
+                        return '|' in line
+                return True  # Empty file, assume standard
+        except Exception:
+            return False
+    
+    def parse(self, file_path: str) -> List[Tuple[str, Optional[str], Optional[str], Optional[str], int]]:
+        cards = []
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        # Parse using existing logic
+                        parts = [p.strip() for p in line.split('|')]
+                        card_name = parts[0]
+                        set_code = parts[1].upper() if len(parts) > 1 and parts[1] else None
+                        collector_number = parts[2] if len(parts) > 2 and parts[2] else None
+                        foil = parts[3].lower() if len(parts) > 3 and parts[3] else None
+                        
+                        cards.append((card_name, set_code, collector_number, foil, 1))
+        except Exception as e:
+            print(f"Error parsing standard text format: {e}", file=sys.stderr)
+        
+        return cards
+    
+    @property
+    def format_name(self) -> str:
+        return "Standard Text Format"
+
+
+class DeckExportTextParser(CardParser):
+    """Parser for Archidekt/Moxfield text export format."""
+    
+    def can_parse(self, file_path: str) -> bool:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        # Check for deck export format: number card (SET)
+                        if re.match(r'^\d+x?\s+.+\([A-Z0-9]{3,4}\)', line, re.IGNORECASE):
+                            return True
+                        # Check first non-comment line
+                        break
+            return False
+        except Exception:
+            return False
+    
+    def parse(self, file_path: str) -> List[Tuple[str, Optional[str], Optional[str], Optional[str], int]]:
+        cards = []
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    
+                    # Pattern 1: quantity card_name (set) collector_number [*F*|*E*]
+                    pattern_full = r'^(\d+)x?\s+(.+?)\s+\(([A-Z0-9]{3,4})\)\s+(\d+[a-z]?)\s*(\*F\*|\*E\*|\[F\]|\[E\]|foil|etched)?$'
+                    match = re.match(pattern_full, line, re.IGNORECASE)
+                    
+                    if match:
+                        quantity = int(match.group(1))
+                        card_name = match.group(2).strip()
+                        set_code = match.group(3).upper()
+                        collector_number = match.group(4)
+                        foil = self._parse_finish(match.group(5))
+                        
+                        for _ in range(quantity):
+                            cards.append((card_name, set_code, collector_number, foil, 1))
+                        continue
+                    
+                    # Pattern 2: quantity card_name (set) [*F*|*E*]
+                    pattern_set = r'^(\d+)x?\s+(.+?)\s+\(([A-Z0-9]{3,4})\)\s*(\*F\*|\*E\*|\[F\]|\[E\]|foil|etched)?$'
+                    match = re.match(pattern_set, line, re.IGNORECASE)
+                    
+                    if match:
+                        quantity = int(match.group(1))
+                        card_name = match.group(2).strip()
+                        set_code = match.group(3).upper()
+                        foil = self._parse_finish(match.group(4))
+                        
+                        for _ in range(quantity):
+                            cards.append((card_name, set_code, None, foil, 1))
+                        continue
+                    
+                    # Pattern 3: quantity card_name [*F*|*E*]
+                    pattern_simple = r'^(\d+)x?\s+(.+?)\s*(\*F\*|\*E\*|\[F\]|\[E\]|foil|etched)?$'
+                    match = re.match(pattern_simple, line, re.IGNORECASE)
+                    
+                    if match:
+                        quantity = int(match.group(1))
+                        card_name = match.group(2).strip()
+                        foil = self._parse_finish(match.group(3))
+                        
+                        for _ in range(quantity):
+                            cards.append((card_name, None, None, foil, 1))
+                        continue
+                    
+                    print(f"Warning: Could not parse line: {line}", file=sys.stderr)
+        
+        except Exception as e:
+            print(f"Error parsing deck export text: {e}", file=sys.stderr)
+        
+        return cards
+    
+    def _parse_finish(self, finish_marker: Optional[str]) -> Optional[str]:
+        """Parse finish marker into standard format."""
+        if not finish_marker:
+            return None
+        
+        finish_marker_lower = finish_marker.lower()
+        if '*f*' in finish_marker_lower or '[f]' in finish_marker_lower or finish_marker_lower == 'foil':
+            return 'foil'
+        elif '*e*' in finish_marker_lower or '[e]' in finish_marker_lower or finish_marker_lower == 'etched':
+            return 'etched'
+        return None
+    
+    @property
+    def format_name(self) -> str:
+        return "Deck Export Text Format (Archidekt/Moxfield)"
+
+
+class ArchidektCSVParser(CardParser):
+    """Parser for Archidekt CSV export format."""
+    
+    def can_parse(self, file_path: str) -> bool:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                first_line = f.readline().strip().lower()
+                return 'card name' in first_line and 'edition' in first_line
+        except Exception:
+            return False
+    
+    def parse(self, file_path: str) -> List[Tuple[str, Optional[str], Optional[str], Optional[str], int]]:
+        cards = []
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    quantity = int(row.get('Count', row.get('Quantity', '1')))
+                    card_name = row.get('Card Name', row.get('Name', '')).strip()
+                    
+                    # Archidekt uses "Edition" for set name
+                    set_code = row.get('Edition', '').strip().upper() or None
+                    collector_number = row.get('Collector Number', '').strip() or None
+                    
+                    # Foil handling
+                    foil_value = row.get('Foil', '').strip().lower()
+                    foil = 'foil' if foil_value in ['yes', 'true', '1', 'foil'] else None
+                    
+                    if card_name:
+                        for _ in range(quantity):
+                            cards.append((card_name, set_code, collector_number, foil, 1))
+        
+        except Exception as e:
+            print(f"Error parsing Archidekt CSV: {e}", file=sys.stderr)
+        
+        return cards
+    
+    @property
+    def format_name(self) -> str:
+        return "Archidekt CSV"
+
+
+class MoxfieldCSVParser(CardParser):
+    """Parser for Moxfield CSV export format."""
+    
+    def can_parse(self, file_path: str) -> bool:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                first_line = f.readline().strip().lower()
+                return 'tradelist count' in first_line and 'collector number' in first_line
+        except Exception:
+            return False
+    
+    def parse(self, file_path: str) -> List[Tuple[str, Optional[str], Optional[str], Optional[str], int]]:
+        cards = []
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    quantity = int(row.get('Count', '1'))
+                    card_name = row.get('Name', '').strip()
+                    set_code = row.get('Edition', '').strip().upper() or None
+                    collector_number = row.get('Collector Number', '').strip() or None
+                    
+                    # Foil handling
+                    foil_value = row.get('Foil', '').strip().lower()
+                    if foil_value in ['foil', 'etched']:
+                        foil = foil_value
+                    else:
+                        foil = None
+                    
+                    if card_name:
+                        for _ in range(quantity):
+                            cards.append((card_name, set_code, collector_number, foil, 1))
+        
+        except Exception as e:
+            print(f"Error parsing Moxfield CSV: {e}", file=sys.stderr)
+        
+        return cards
+    
+    @property
+    def format_name(self) -> str:
+        return "Moxfield CSV"
+
+
+class GenericCSVParser(CardParser):
+    """Parser for generic CSV format."""
+    
+    def can_parse(self, file_path: str) -> bool:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                first_line = f.readline().strip().lower()
+                if first_line.count(',') >= 1:
+                    parts = first_line.split(',')
+                    return parts[0].strip() in ['count', 'quantity', 'qty', 'amount']
+            return False
+        except Exception:
+            return False
+    
+    def parse(self, file_path: str) -> List[Tuple[str, Optional[str], Optional[str], Optional[str], int]]:
+        cards = []
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                next(reader)  # Skip header
+                
+                for row in reader:
+                    if len(row) < 2:
+                        continue
+                    
+                    quantity = int(row[0]) if row[0].isdigit() else 1
+                    card_name = row[1].strip()
+                    set_code = row[2].strip().upper() if len(row) > 2 and row[2] else None
+                    collector_number = row[3].strip() if len(row) > 3 and row[3] else None
+                    foil = row[4].strip().lower() if len(row) > 4 and row[4] else None
+                    
+                    if card_name:
+                        for _ in range(quantity):
+                            cards.append((card_name, set_code, collector_number, foil, 1))
+        
+        except Exception as e:
+            print(f"Error parsing generic CSV: {e}", file=sys.stderr)
+        
+        return cards
+    
+    @property
+    def format_name(self) -> str:
+        return "Generic CSV"
+
+
+class ParserFactory:
+    """Factory class to detect and return the appropriate parser."""
+    
+    # Order matters! Check most specific formats first
+    PARSERS = [
+        MoxfieldCSVParser(),
+        ArchidektCSVParser(),
+        DeckExportTextParser(),
+        GenericCSVParser(),
+        StandardTextParser(),  # Fallback - always matches
+    ]
+    
+    @classmethod
+    def get_parser(cls, file_path: str) -> CardParser:
+        """
+        Detect file format and return appropriate parser.
+        
+        Args:
+            file_path: Path to the input file
+            
+        Returns:
+            CardParser instance for the detected format
+        """
+        for parser in cls.PARSERS:
+            if parser.can_parse(file_path):
+                return parser
+        
+        # Should never reach here since StandardTextParser always matches
+        return StandardTextParser()
+
 def convert_parsed_cards_to_strings(parsed_cards: List[Tuple[str, Optional[str], Optional[str], Optional[str], int]], 
                                    set_filter: Optional[str] = None) -> List[str]:
     """
@@ -584,64 +632,23 @@ def convert_parsed_cards_to_strings(parsed_cards: List[Tuple[str, Optional[str],
     
     return cards_to_process
 
+
 def process_card_list(input_file: str, output_file: str, set_filter: Optional[str] = None):
     """Process a card list and generate pricing CSV."""
     
     api = ScryfallAPI()
     pricer = CardPricer(api)
     
-    # Detect file format
-    file_ext = input_file.lower().split('.')[-1]
-    cards_to_process = []
+    # Detect format and parse
+    parser = ParserFactory.get_parser(input_file)
+    print(f"Detected format: {parser.format_name}")
     
-    if file_ext == 'csv':
-        # Try to detect CSV format
-        csv_format = detect_csv_format(input_file)
-        
-        if csv_format == 'archidekt':
-            print("Detected Archidekt CSV format")
-            parsed_cards = parse_archidekt_csv(input_file)
-            cards_to_process = convert_parsed_cards_to_strings(parsed_cards, set_filter)
-        
-        elif csv_format == 'moxfield':
-            print("Detected Moxfield CSV format")
-            parsed_cards = parse_moxfield_csv(input_file)
-            cards_to_process = convert_parsed_cards_to_strings(parsed_cards, set_filter)
-        
-        elif csv_format == 'generic_csv':
-            print("Detected generic CSV format")
-            parsed_cards = parse_generic_csv(input_file)
-            cards_to_process = convert_parsed_cards_to_strings(parsed_cards, set_filter)
-        
-        else:
-            # Treat as plain text with | delimiters
-            print("Using standard text format")
-            with open(input_file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#'):
-                        cards_to_process.append(line)
+    parsed_cards = parser.parse(input_file)
+    cards_to_process = convert_parsed_cards_to_strings(parsed_cards, set_filter)
     
-    else:
-        # Plain text file - detect format
-        text_format = detect_text_format(input_file)
-        
-        if text_format == 'deck_export':
-            print("Detected deck export text format (Archidekt/Moxfield)")
-            parsed_cards = parse_deck_export_text(input_file)
-            cards_to_process = convert_parsed_cards_to_strings(parsed_cards, set_filter)
-        else:
-            # Standard pipe-delimited format
-            print("Using standard text format")
-            try:
-                with open(input_file, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#'):  # Skip empty lines and comments
-                            cards_to_process.append(line)
-            except Exception as e:
-                print(f"Error reading input file: {e}", file=sys.stderr)
-                sys.exit(1)
+    if not cards_to_process:
+        print("No cards found in input file.", file=sys.stderr)
+        sys.exit(1)
     
     # Process cards
     results = []
@@ -671,29 +678,32 @@ def process_card_list(input_file: str, output_file: str, set_filter: Optional[st
             })
             continue
         
+        # If specific printing requested (set + collector number), just return that one price
         if set_code and collector_number:
-            # Specific card requested
             card = price_data[0]
+            
             results.append({
                 'card_name': card['card_name'],
                 'set': card['set'],
                 'collector_number': card['collector_number'],
                 'finish': card['finish'],
-                'min_price': f"${card['price']:.2f}" if card['price'] else 'N/A',
-                'max_price': f"${card['price']:.2f}" if card['price'] else 'N/A',
-                'min_printing': f"{card['set']} #{card['collector_number']} ({card['finish']})",
-                'max_printing': f"{card['set']} #{card['collector_number']} ({card['finish']})"
+                'price': f"${card['price']:.2f}" if card['price'] else 'N/A',
+                'min_price': '',
+                'max_price': '',
+                'min_printing': '',
+                'max_printing': ''
             })
         else:
-            # Get cheapest and most expensive
+            # Get cheapest and most expensive for general searches
             cheapest, most_expensive = pricer.get_cheapest_and_most_expensive(price_data)
             
             if cheapest and most_expensive:
                 results.append({
                     'card_name': cheapest['card_name'],
                     'set': set_code or 'Multiple',
-                    'collector_number': 'Multiple' if not collector_number else collector_number,
-                    'finish': foil or 'Multiple',
+                    'collector_number': collector_number or 'Multiple',
+                    'finish': foil or 'nonfoil',
+                    'price': '',  # Leave blank for range searches
                     'min_price': f"${cheapest['price']:.2f}",
                     'max_price': f"${most_expensive['price']:.2f}",
                     'min_printing': f"{cheapest['set']} #{cheapest['collector_number']} ({cheapest['finish']})",
@@ -704,18 +714,19 @@ def process_card_list(input_file: str, output_file: str, set_filter: Optional[st
                     'card_name': card_name,
                     'set': set_code or 'N/A',
                     'collector_number': collector_number or 'N/A',
-                    'finish': foil or 'N/A',
-                    'min_price': 'No Price Data',
-                    'max_price': 'No Price Data',
-                    'min_printing': 'N/A',
-                    'max_printing': 'N/A'
+                    'finish': foil or 'nonfoil',
+                    'price': 'No Price Data',
+                    'min_price': '',
+                    'max_price': '',
+                    'min_printing': '',
+                    'max_printing': ''
                 })
     
     # Write results to CSV
     try:
         with open(output_file, 'w', newline='', encoding='utf-8') as f:
             fieldnames = ['card_name', 'set', 'collector_number', 'finish', 
-                         'min_price', 'max_price', 'min_printing', 'max_printing']
+                         'price', 'min_price', 'max_price', 'min_printing', 'max_printing']
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(results)
