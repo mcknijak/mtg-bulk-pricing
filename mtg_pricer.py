@@ -353,10 +353,8 @@ class DeckExportTextParser(CardParser):
                     line = line.strip()
                     if line and not line.startswith('#'):
                         # Check for deck export format: number card (SET)
-                        if re.match(r'^\d+x?\s+.+\([A-Z0-9]{3,4}\)', line, re.IGNORECASE):
-                            return True
+                        return re.match(r'^\d+x?\s+.+\([A-Z0-9]{3,4}\)', line, re.IGNORECASE)
                         # Check first non-comment line
-                        break
             return False
         except Exception:
             return False
@@ -880,6 +878,128 @@ def calculate_inventory_value(input_file: str, output_file: str):
         print(f"Error writing output file: {e}", file=sys.stderr)
         sys.exit(1)
 
+def generate_buylist(inventory_file: str, set_codes: List[str], output_file: str):
+    """
+    Generate a buylist of cards NOT in inventory for specified sets.
+    Shows what cards user needs to complete their collection.
+    
+    Args:
+        inventory_file: Path to existing inventory CSV (with quantities)
+        set_codes: List of set codes to check completeness for
+        output_file: Path to output buylist CSV
+    """
+    
+    api = ScryfallAPI()
+    
+    # Read existing inventory to get what user already has
+    owned_cards = {}  # Key: (set, collector_number, finish), Value: quantity
+    
+    try:
+        with open(inventory_file, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                quantity_str = row.get('quantity', '').strip()
+                if quantity_str and quantity_str.isdigit() and int(quantity_str) > 0:
+                    set_code = row.get('set', '').strip().upper()
+                    collector_number = row.get('collector_number', '').strip()
+                    finish = row.get('finish', 'nonfoil').strip().lower()
+                    quantity = int(quantity_str)
+                    
+                    key = (set_code, collector_number, finish)
+                    owned_cards[key] = owned_cards.get(key, 0) + quantity
+    except FileNotFoundError:
+        print(f"Inventory file not found: {inventory_file}")
+        print("Generating buylist for entire sets...")
+    except Exception as e:
+        print(f"Error reading inventory file: {e}", file=sys.stderr)
+        print("Generating buylist for entire sets...")
+    
+    # Get all cards from specified sets
+    all_cards_needed = []
+    total_cost = 0
+    
+    for set_code in set_codes:
+        print(f"Fetching cards from set: {set_code}")
+        cards = api.get_set_cards(set_code)
+        
+        for card in cards:
+            card_name = card.get('name')
+            set_code_upper = card.get('set').upper()
+            collector_number = card.get('collector_number')
+            rarity = card.get('rarity')
+            finishes = card.get('finishes', [])
+            
+            prices = api.extract_prices(card)
+            
+            # Check each finish
+            for finish in finishes:
+                # Determine price for this finish
+                if finish == 'nonfoil':
+                    price = prices['usd']
+                elif finish == 'foil':
+                    price = prices['usd_foil']
+                elif finish == 'etched':
+                    price = prices['usd_etched']
+                else:
+                    price = None
+                
+                # Check if user already owns this card in this finish
+                key = (set_code_upper, collector_number, finish)
+                owned_quantity = owned_cards.get(key, 0)
+                
+                # Collectors typically want 1 of each finish
+                needed_quantity = 1 - owned_quantity
+                
+                if needed_quantity > 0:
+                    unit_price = price if price else 0
+                    total_price = unit_price * needed_quantity
+                    
+                    all_cards_needed.append({
+                        'card_name': card_name,
+                        'set': set_code_upper,
+                        'collector_number': collector_number,
+                        'rarity': rarity,
+                        'finish': finish,
+                        'owned': owned_quantity,
+                        'needed': needed_quantity,
+                        'unit_price': f"${unit_price:.2f}" if price else 'N/A',
+                        'total_price': f"${total_price:.2f}" if price else 'N/A'
+                    })
+                    
+                    if price:
+                        total_cost += total_price
+    
+    # Sort by set, then collector number, then finish
+    all_cards_needed.sort(key=lambda x: (x['set'], 
+                                          int(''.join(filter(str.isdigit, x['collector_number'])) or '0'),
+                                          x['finish']))
+    
+    # Write buylist
+    try:
+        with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            fieldnames = ['card_name', 'set', 'collector_number', 'rarity', 'finish',
+                         'owned', 'needed', 'unit_price', 'total_price']
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(all_cards_needed)
+        
+        print(f"\nBuylist written to {output_file}")
+        print(f"Total cards needed: {len(all_cards_needed)}")
+        print(f"Total estimated cost: ${total_cost:.2f}")
+        
+        # Provide some helpful statistics
+        by_rarity = {}
+        for card in all_cards_needed:
+            rarity = card['rarity']
+            by_rarity[rarity] = by_rarity.get(rarity, 0) + 1
+        
+        print(f"\nBreakdown by rarity:")
+        for rarity, count in sorted(by_rarity.items()):
+            print(f"  {rarity.capitalize()}: {count}")
+        
+    except Exception as e:
+        print(f"Error writing output file: {e}", file=sys.stderr)
+        sys.exit(1)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -898,6 +1018,12 @@ Examples:
   
   # Calculate inventory value from filled template
   python mtg_pricer.py --calculate-value -i filled_template.csv -o inventory_value.csv
+
+  # Generate buylist for missing cards from inventory
+  python mtg_pricer.py --buylist -i my_inventory.csv --sets MH3 -o buylist.csv
+  
+  # Generate complete buylist for sets (no inventory file)
+  python mtg_pricer.py --buylist --sets MH3 BLB -o complete_buylist.csv
 
 Supported Input Formats (Auto-detected):
   
@@ -937,6 +1063,8 @@ Notes:
                            help='Generate inventory template for specified sets')
     mode_group.add_argument('--calculate-value', action='store_true',
                            help='Calculate total value from filled inventory template')
+    mode_group.add_argument('--buylist', action='store_true',
+                           help='Generate buylist of missing cards from sets')
     
     # Input/output files
     parser.add_argument('-i', '--input',
@@ -964,6 +1092,13 @@ Notes:
         if not args.input:
             parser.error("--calculate-value requires --input")
         calculate_inventory_value(args.input, args.output)
+
+    elif args.buylist:
+        if not args.sets:
+            parser.error("--buylist requires --sets")
+        # Input is optional - if not provided, assumes complete buylist
+        sets_upper = [s.upper() for s in args.sets]
+        generate_buylist(args.input if args.input else None, sets_upper, args.output)
     
     else:
         # Default mode: price list

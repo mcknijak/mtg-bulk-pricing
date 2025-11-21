@@ -174,12 +174,61 @@ python mtg_pricer.py --calculate-value -i filled_inventory.csv -o inventory_valu
 - Total price (quantity × unit price)
 - **Overall collection value** printed to console
 
+### Mode 6: Generate Buylist (Missing Cards)
+
+Generate a list of cards you DON'T have yet.
+
+**With existing inventory:**
+```bash
+# Shows which cards from MH3 you still need to buy
+python mtg_pricer.py --buylist -i my_inventory.csv --sets MH3 -o mh3_buylist.csv
+```
+
+**Without inventory (complete set list):**
+```bash
+# Shows all cards from MH3 and BLB with prices
+python mtg_pricer.py --buylist --sets MH3 BLB -o complete_buylist.csv
+```
+
+**Output:** CSV with:
+- Cards you don't own (or need more of)
+- How many you already own
+- How many you need
+- Unit price and total cost for needed cards
+- Total estimated cost to complete the set(s)
+
+**Perfect for:**
+- Completing set collections
+- Planning purchases
+- Tracking set completion progress
+- Budgeting for new sets
+
+**Example Output:**
+```csv
+card_name,set,collector_number,rarity,finish,owned,needed,unit_price,total_price
+"Flare of Denial",MH3,12,rare,nonfoil,0,1,$8.50,$8.50
+"Flare of Denial",MH3,12,rare,foil,0,1,$25.00,$25.00
+"Emrakul the World Anew",MH3,6,mythic,nonfoil,1,0,$45.00,$0.00
+```
+
+The script will also print these statistics:
+```
+Total cards needed: 245
+Total estimated cost: $1,234.56
+
+Breakdown by rarity:
+  Common: 80
+  Uncommon: 90
+  Rare: 60
+  Mythic: 15
+```
+
 
 ## Supported File Formats
 
 ### Standard Text Format (.txt)
 
-Our simple pipe-delimited format:
+Simple pipe-delimited format:
 ```
 Card Name
 Card Name|SET
