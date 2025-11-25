@@ -880,7 +880,8 @@ def calculate_inventory_value(input_file: str, output_file: str):
 
 def generate_buylist(inventory_file: Optional[str], set_codes: List[str], output_file: str,
                     finish_filter: Optional[List[str]] = None, max_price: Optional[float] = None,
-                    exclude_finish: Optional[List[str]] = None):
+                    exclude_finish: Optional[List[str]] = None, min_price: Optional[float] = None,
+                    min_price_by_rarity: Optional[Dict[str, float]] = None):
     """
     Generate a buylist of cards NOT in inventory for specified sets.
     Shows what cards user needs to complete their collection.
@@ -892,6 +893,8 @@ def generate_buylist(inventory_file: Optional[str], set_codes: List[str], output
         finish_filter: List of finishes to INCLUDE (e.g., ['nonfoil', 'foil'])
         max_price: Maximum price per card to include (excludes cards above this)
         exclude_finish: List of finishes to EXCLUDE (e.g., ['etched'])
+        min_price: Minimum price to apply to all cards (vendor minimum)
+        min_price_by_rarity: Dictionary of minimum prices by rarity (overrides min_price)
     """
     
     api = ScryfallAPI()
@@ -901,6 +904,10 @@ def generate_buylist(inventory_file: Optional[str], set_codes: List[str], output
         finish_filter = [f.lower() for f in finish_filter]
     if exclude_finish:
         exclude_finish = [f.lower() for f in exclude_finish]
+    
+    # Normalize rarity keys to lowercase if provided
+    if min_price_by_rarity:
+        min_price_by_rarity = {k.lower(): v for k, v in min_price_by_rarity.items()}
     
     # Read existing inventory to get what user already has
     owned_cards = {}  # Key: (set, collector_number, finish), Value: quantity
@@ -930,6 +937,7 @@ def generate_buylist(inventory_file: Optional[str], set_codes: List[str], output
     all_cards_needed = []
     total_cost = 0
     filtered_count = 0
+    price_adjusted_count = 0
     
     for set_code in set_codes:
         print(f"Fetching cards from set: {set_code}")
@@ -967,7 +975,21 @@ def generate_buylist(inventory_file: Optional[str], set_codes: List[str], output
                 else:
                     price = None
                 
-                # Apply max price filter
+                # Apply minimum price logic
+                original_price = price
+                if price is not None:
+                    # Check for rarity-specific minimum first
+                    if min_price_by_rarity and rarity.lower() in min_price_by_rarity:
+                        rarity_min = min_price_by_rarity[rarity.lower()]
+                        if price < rarity_min:
+                            price = rarity_min
+                            price_adjusted_count += 1
+                    # Otherwise apply general minimum
+                    elif min_price is not None and price < min_price:
+                        price = min_price
+                        price_adjusted_count += 1
+                
+                # Apply max price filter (after minimum adjustment)
                 if max_price is not None and price is not None and price > max_price:
                     filtered_count += 1
                     continue
@@ -1015,6 +1037,8 @@ def generate_buylist(inventory_file: Optional[str], set_codes: List[str], output
         print(f"\nBuylist written to {output_file}")
         print(f"Total cards needed: {len(all_cards_needed)}")
         print(f"Cards filtered out: {filtered_count}")
+        if price_adjusted_count > 0:
+            print(f"Cards with adjusted minimum price: {price_adjusted_count}")
         print(f"Total estimated cost: ${total_cost:.2f}")
         
         # Provide some helpful statistics
@@ -1073,6 +1097,15 @@ Examples:
   
   # Buylist: foil and etched only (exclude nonfoil)
   python mtg_pricer.py --buylist --sets MH3 --finish foil etched -o premium_buylist.csv
+
+  # Buylist: apply vendor minimum of $0.25 per card
+  python mtg_pricer.py --buylist --sets MH3 --min-price 0.25 -o buylist_min.csv
+  
+  # Buylist: rarity-specific minimums (common=$0.10, uncommon=$0.25, rare=$0.50, mythic=$1.00)
+  python mtg_pricer.py --buylist --sets MH3 --min-common 0.10 --min-uncommon 0.25 --min-rare 0.50 --min-mythic 1.00 -o buylist_rarity_min.csv
+  
+  # Buylist: minimum $0.25, maximum $10, nonfoil only
+  python mtg_pricer.py --buylist --sets BLB --min-price 0.25 --max-price 10.00 --finish nonfoil -o buylist_budget.csv
 
 Supported Input Formats (Auto-detected):
   
@@ -1134,6 +1167,18 @@ Notes:
                        help='Exclude these finishes (nonfoil, foil, etched)')
     parser.add_argument('--max-price', type=float,
                        help='Maximum price per card (excludes cards above this price)')
+
+    # Buylist pricing arguments
+    parser.add_argument('--min-price', type=float,
+                       help='Minimum price per card (vendor minimum, e.g., 0.25)')
+    parser.add_argument('--min-common', type=float,
+                       help='Minimum price for common cards')
+    parser.add_argument('--min-uncommon', type=float,
+                       help='Minimum price for uncommon cards')
+    parser.add_argument('--min-rare', type=float,
+                       help='Minimum price for rare cards')
+    parser.add_argument('--min-mythic', type=float,
+                       help='Minimum price for mythic cards')
     
     args = parser.parse_args()
     
@@ -1158,6 +1203,20 @@ Notes:
             if args.finish_filter and args.exclude_finish:
                 parser.error("Cannot use both --finish and --exclude-finish")
             
+            # Build rarity-specific minimum prices if provided
+            min_price_by_rarity = {}
+            if args.min_common is not None:
+                min_price_by_rarity['common'] = args.min_common
+            if args.min_uncommon is not None:
+                min_price_by_rarity['uncommon'] = args.min_uncommon
+            if args.min_rare is not None:
+                min_price_by_rarity['rare'] = args.min_rare
+            if args.min_mythic is not None:
+                min_price_by_rarity['mythic'] = args.min_mythic
+            
+            # Use rarity-specific minimums if any provided, otherwise use general minimum
+            min_price_dict = min_price_by_rarity if min_price_by_rarity else None
+            
             sets_upper = [s.upper() for s in args.sets]
             generate_buylist(
                 args.input if args.input else None,
@@ -1165,7 +1224,9 @@ Notes:
                 args.output,
                 finish_filter=args.finish_filter,
                 max_price=args.max_price,
-                exclude_finish=args.exclude_finish
+                exclude_finish=args.exclude_finish,
+                min_price=args.min_price,
+                min_price_by_rarity=min_price_dict
             )
     
     else:

@@ -236,6 +236,66 @@ python mtg_pricer.py --buylist --sets MH3 BLB DSK --finish nonfoil --max-price 1
 - Focusing on playsets ("nonfoil only")
 - Completing specific finish collections ("foil only")
 
+**Apply minimum prices (vendor minimums):**
+```bash
+# All cards have minimum $0.25 price
+python mtg_pricer.py --buylist --sets MH3 --min-price 0.25 -o buylist.csv
+
+# Rarity-specific minimums (realistic vendor pricing)
+python mtg_pricer.py --buylist --sets MH3 \
+  --min-common 0.10 \
+  --min-uncommon 0.25 \
+  --min-rare 0.50 \
+  --min-mythic 1.00 \
+  -o buylist_realistic.csv
+
+# Combine with other filters: min $0.25, max $10, nonfoil only
+python mtg_pricer.py --buylist --sets BLB \
+  --min-price 0.25 \
+  --max-price 10.00 \
+  --finish nonfoil \
+  -o buylist_budget.csv
+```
+
+**Why use minimum prices?**
+- Many card vendors (TCGPlayer, Card Kingdom, etc.) have minimum prices for bulk cards
+- Commons often have a floor of $0.10-$0.25
+- Helps calculate realistic total costs when buying from vendors
+- Accounts for shipping, handling, and vendor overhead
+
+**Minimum Price Options:**
+- `--min-price 0.25` - Apply same minimum to all cards
+- `--min-common 0.10` - Minimum for common cards only
+- `--min-uncommon 0.25` - Minimum for uncommon cards only
+- `--min-rare 0.50` - Minimum for rare cards only
+- `--min-mythic 1.00` - Minimum for mythic cards only
+
+**Note:** Rarity-specific minimums override the general `--min-price` if both are provided.
+
+**Typical Vendor Minimums:**
+```bash
+# TCGPlayer-style pricing (conservative)
+python mtg_pricer.py --buylist --sets MH3 \
+  --min-common 0.15 \
+  --min-uncommon 0.25 \
+  --min-rare 0.50 \
+  --min-mythic 1.00 \
+  -o buylist_tcgplayer_style.csv
+
+# Budget store pricing (aggressive)
+python mtg_pricer.py --buylist --sets BLB \
+  --min-common 0.10 \
+  --min-uncommon 0.15 \
+  --min-rare 0.25 \
+  --min-mythic 0.50 \
+  -o buylist_budget_store.csv
+
+# Premium store pricing (high minimum)
+python mtg_pricer.py --buylist --sets MH3 \
+  --min-price 0.50 \
+  -o buylist_premium_store.csv
+```
+
 **Example Output:**
 ```csv
 card_name,set,collector_number,rarity,finish,owned,needed,unit_price,total_price
