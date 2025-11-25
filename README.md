@@ -178,30 +178,63 @@ python mtg_pricer.py --calculate-value -i filled_inventory.csv -o inventory_valu
 
 Generate a list of cards you DON'T have yet.
 
-**With existing inventory:**
+**Basic buylist:**
 ```bash
-# Shows which cards from MH3 you still need to buy
-python mtg_pricer.py --buylist -i my_inventory.csv --sets MH3 -o mh3_buylist.csv
+python mtg_pricer.py --buylist -i my_inventory.csv --sets MH3 -o buylist.csv
 ```
 
-**Without inventory (complete set list):**
+**Filter by finish:**
 ```bash
-# Shows all cards from MH3 and BLB with prices
-python mtg_pricer.py --buylist --sets MH3 BLB -o complete_buylist.csv
+# Only nonfoil cards
+python mtg_pricer.py --buylist --sets MH3 --finish nonfoil -o nonfoil_buylist.csv
+
+# Only foil cards
+python mtg_pricer.py --buylist --sets MH3 --finish foil -o foil_buylist.csv
+
+# Multiple finishes (foil and etched, exclude nonfoil)
+python mtg_pricer.py --buylist --sets MH3 --finish foil etched -o premium_buylist.csv
+
+# Exclude specific finishes
+python mtg_pricer.py --buylist --sets MH3 --exclude-finish etched -o no_etched.csv
 ```
 
-**Output:** CSV with:
-- Cards you don't own (or need more of)
-- How many you already own
-- How many you need
-- Unit price and total cost for needed cards
-- Total estimated cost to complete the set(s)
+**Filter by price:**
+```bash
+# Only cards under $10
+python mtg_pricer.py --buylist --sets MH3 --max-price 10.00 -o budget_buylist.csv
 
-**Perfect for:**
-- Completing set collections
-- Planning purchases
-- Tracking set completion progress
-- Budgeting for new sets
+# Only cards under $5
+python mtg_pricer.py --buylist --sets BLB --max-price 5.00 -o cheap_cards.csv
+```
+
+**Combine filters:**
+```bash
+# Nonfoil cards under $5
+python mtg_pricer.py --buylist --sets BLB --finish nonfoil --max-price 5.00 -o budget_nonfoils.csv
+
+# Foil or etched cards under $20
+python mtg_pricer.py --buylist --sets MH3 --finish foil etched --max-price 20.00 -o premium_budget.csv
+
+# Multiple sets, nonfoil only, under $10
+python mtg_pricer.py --buylist --sets MH3 BLB DSK --finish nonfoil --max-price 10.00 -o affordable_complete.csv
+```
+
+**Filter Options:**
+- `--finish nonfoil` - Only include nonfoil cards
+- `--finish foil` - Only include foil cards
+- `--finish etched` - Only include etched cards
+- `--finish foil etched` - Include both foil and etched (excludes nonfoil)
+- `--exclude-finish etched` - Exclude etched cards
+- `--exclude-finish foil etched` - Exclude foil and etched (only nonfoil)
+- `--max-price 10.00` - Exclude cards over $10.00
+
+**Note:** You cannot use both `--finish` and `--exclude-finish` at the same time.
+
+**Uses:**
+- Budget-conscious collecting ("show me cards under $5")
+- Avoiding premium versions ("exclude etched foils")
+- Focusing on playsets ("nonfoil only")
+- Completing specific finish collections ("foil only")
 
 **Example Output:**
 ```csv

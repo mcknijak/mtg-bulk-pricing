@@ -878,45 +878,58 @@ def calculate_inventory_value(input_file: str, output_file: str):
         print(f"Error writing output file: {e}", file=sys.stderr)
         sys.exit(1)
 
-def generate_buylist(inventory_file: str, set_codes: List[str], output_file: str):
+def generate_buylist(inventory_file: Optional[str], set_codes: List[str], output_file: str,
+                    finish_filter: Optional[List[str]] = None, max_price: Optional[float] = None,
+                    exclude_finish: Optional[List[str]] = None):
     """
     Generate a buylist of cards NOT in inventory for specified sets.
     Shows what cards user needs to complete their collection.
     
     Args:
-        inventory_file: Path to existing inventory CSV (with quantities)
+        inventory_file: Path to existing inventory CSV (with quantities), None for complete set
         set_codes: List of set codes to check completeness for
         output_file: Path to output buylist CSV
+        finish_filter: List of finishes to INCLUDE (e.g., ['nonfoil', 'foil'])
+        max_price: Maximum price per card to include (excludes cards above this)
+        exclude_finish: List of finishes to EXCLUDE (e.g., ['etched'])
     """
     
     api = ScryfallAPI()
     
+    # Normalize finish filters to lowercase
+    if finish_filter:
+        finish_filter = [f.lower() for f in finish_filter]
+    if exclude_finish:
+        exclude_finish = [f.lower() for f in exclude_finish]
+    
     # Read existing inventory to get what user already has
     owned_cards = {}  # Key: (set, collector_number, finish), Value: quantity
     
-    try:
-        with open(inventory_file, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                quantity_str = row.get('quantity', '').strip()
-                if quantity_str and quantity_str.isdigit() and int(quantity_str) > 0:
-                    set_code = row.get('set', '').strip().upper()
-                    collector_number = row.get('collector_number', '').strip()
-                    finish = row.get('finish', 'nonfoil').strip().lower()
-                    quantity = int(quantity_str)
-                    
-                    key = (set_code, collector_number, finish)
-                    owned_cards[key] = owned_cards.get(key, 0) + quantity
-    except FileNotFoundError:
-        print(f"Inventory file not found: {inventory_file}")
-        print("Generating buylist for entire sets...")
-    except Exception as e:
-        print(f"Error reading inventory file: {e}", file=sys.stderr)
-        print("Generating buylist for entire sets...")
+    if inventory_file:
+        try:
+            with open(inventory_file, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    quantity_str = row.get('quantity', '').strip()
+                    if quantity_str and quantity_str.isdigit() and int(quantity_str) > 0:
+                        set_code = row.get('set', '').strip().upper()
+                        collector_number = row.get('collector_number', '').strip()
+                        finish = row.get('finish', 'nonfoil').strip().lower()
+                        quantity = int(quantity_str)
+                        
+                        key = (set_code, collector_number, finish)
+                        owned_cards[key] = owned_cards.get(key, 0) + quantity
+        except FileNotFoundError:
+            print(f"Inventory file not found: {inventory_file}")
+            print("Generating buylist for entire sets...")
+        except Exception as e:
+            print(f"Error reading inventory file: {e}", file=sys.stderr)
+            print("Generating buylist for entire sets...")
     
     # Get all cards from specified sets
     all_cards_needed = []
     total_cost = 0
+    filtered_count = 0
     
     for set_code in set_codes:
         print(f"Fetching cards from set: {set_code}")
@@ -933,18 +946,34 @@ def generate_buylist(inventory_file: str, set_codes: List[str], output_file: str
             
             # Check each finish
             for finish in finishes:
+                finish_lower = finish.lower()
+                
+                # Apply finish filters
+                if finish_filter and finish_lower not in finish_filter:
+                    filtered_count += 1
+                    continue
+                
+                if exclude_finish and finish_lower in exclude_finish:
+                    filtered_count += 1
+                    continue
+                
                 # Determine price for this finish
-                if finish == 'nonfoil':
+                if finish_lower == 'nonfoil':
                     price = prices['usd']
-                elif finish == 'foil':
+                elif finish_lower == 'foil':
                     price = prices['usd_foil']
-                elif finish == 'etched':
+                elif finish_lower == 'etched':
                     price = prices['usd_etched']
                 else:
                     price = None
                 
+                # Apply max price filter
+                if max_price is not None and price is not None and price > max_price:
+                    filtered_count += 1
+                    continue
+                
                 # Check if user already owns this card in this finish
-                key = (set_code_upper, collector_number, finish)
+                key = (set_code_upper, collector_number, finish_lower)
                 owned_quantity = owned_cards.get(key, 0)
                 
                 # Collectors typically want 1 of each finish
@@ -959,7 +988,7 @@ def generate_buylist(inventory_file: str, set_codes: List[str], output_file: str
                         'set': set_code_upper,
                         'collector_number': collector_number,
                         'rarity': rarity,
-                        'finish': finish,
+                        'finish': finish_lower,
                         'owned': owned_quantity,
                         'needed': needed_quantity,
                         'unit_price': f"${unit_price:.2f}" if price else 'N/A',
@@ -985,17 +1014,25 @@ def generate_buylist(inventory_file: str, set_codes: List[str], output_file: str
         
         print(f"\nBuylist written to {output_file}")
         print(f"Total cards needed: {len(all_cards_needed)}")
+        print(f"Cards filtered out: {filtered_count}")
         print(f"Total estimated cost: ${total_cost:.2f}")
         
         # Provide some helpful statistics
         by_rarity = {}
+        by_finish = {}
         for card in all_cards_needed:
             rarity = card['rarity']
+            finish = card['finish']
             by_rarity[rarity] = by_rarity.get(rarity, 0) + 1
+            by_finish[finish] = by_finish.get(finish, 0) + 1
         
         print(f"\nBreakdown by rarity:")
         for rarity, count in sorted(by_rarity.items()):
             print(f"  {rarity.capitalize()}: {count}")
+        
+        print(f"\nBreakdown by finish:")
+        for finish, count in sorted(by_finish.items()):
+            print(f"  {finish.capitalize()}: {count}")
         
     except Exception as e:
         print(f"Error writing output file: {e}", file=sys.stderr)
@@ -1007,23 +1044,35 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Price a simple card list
+  # Price a simple card list (returns nonfoil by default)
   python mtg_pricer.py -i cards.txt -o prices.csv
   
-  # Price cards from a specific set only
+  # Price cards from a specific set only (case insensitive)
   python mtg_pricer.py -i cards.txt -o prices.csv --set one
   
-  # Generate inventory template with prices
+  # Generate inventory template with prices (single API pass)
   python mtg_pricer.py --inventory-mode --sets MH3 OTJ -o template.csv
   
-  # Calculate inventory value from filled template
+  # Calculate inventory value from filled template (no API calls)
   python mtg_pricer.py --calculate-value -i filled_template.csv -o inventory_value.csv
-
+  
   # Generate buylist for missing cards from inventory
   python mtg_pricer.py --buylist -i my_inventory.csv --sets MH3 -o buylist.csv
   
-  # Generate complete buylist for sets (no inventory file)
-  python mtg_pricer.py --buylist --sets MH3 BLB -o complete_buylist.csv
+  # Buylist: only nonfoil cards
+  python mtg_pricer.py --buylist --sets MH3 --finish nonfoil -o nonfoil_buylist.csv
+  
+  # Buylist: exclude etched cards
+  python mtg_pricer.py --buylist --sets MH3 --exclude-finish etched -o no_etched.csv
+  
+  # Buylist: only cards under $10
+  python mtg_pricer.py --buylist --sets MH3 --max-price 10.00 -o budget_buylist.csv
+  
+  # Buylist: nonfoil only, under $5
+  python mtg_pricer.py --buylist --sets BLB --finish nonfoil --max-price 5.00 -o cheap_nonfoils.csv
+  
+  # Buylist: foil and etched only (exclude nonfoil)
+  python mtg_pricer.py --buylist --sets MH3 --finish foil etched -o premium_buylist.csv
 
 Supported Input Formats (Auto-detected):
   
@@ -1041,10 +1090,10 @@ Supported Input Formats (Auto-detected):
     1 Card Name
   
   Archidekt CSV Export:
-    Required Columns: Count, Card Name, Edition, Collector Number, Foil
+    Columns: Count, Card Name, Edition, Collector Number, Foil
   
   Moxfield CSV Export:
-    Required Columns: Count, Name, Edition, Collector Number, Foil
+    Columns: Count, Name, Edition, Collector Number, Foil
   
   Generic CSV:
     Columns: Quantity, Card Name, Set Code, Collector Number, Finish
@@ -1077,6 +1126,14 @@ Notes:
     # Inventory mode arguments
     parser.add_argument('--sets', nargs='+',
                        help='Set codes for inventory mode (case insensitive)')
+
+    # Buylist mode arguments
+    parser.add_argument('--finish', dest='finish_filter', nargs='+',
+                       help='Include only these finishes (nonfoil, foil, etched)')
+    parser.add_argument('--exclude-finish', dest='exclude_finish', nargs='+',
+                       help='Exclude these finishes (nonfoil, foil, etched)')
+    parser.add_argument('--max-price', type=float,
+                       help='Maximum price per card (excludes cards above this price)')
     
     args = parser.parse_args()
     
@@ -1094,11 +1151,22 @@ Notes:
         calculate_inventory_value(args.input, args.output)
 
     elif args.buylist:
-        if not args.sets:
-            parser.error("--buylist requires --sets")
-        # Input is optional - if not provided, assumes complete buylist
-        sets_upper = [s.upper() for s in args.sets]
-        generate_buylist(args.input if args.input else None, sets_upper, args.output)
+            if not args.sets:
+                parser.error("--buylist requires --sets")
+            
+            # Validate finish filters
+            if args.finish_filter and args.exclude_finish:
+                parser.error("Cannot use both --finish and --exclude-finish")
+            
+            sets_upper = [s.upper() for s in args.sets]
+            generate_buylist(
+                args.input if args.input else None,
+                sets_upper,
+                args.output,
+                finish_filter=args.finish_filter,
+                max_price=args.max_price,
+                exclude_finish=args.exclude_finish
+            )
     
     else:
         # Default mode: price list
